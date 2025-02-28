@@ -4,6 +4,10 @@
 #include <string.h>
 #include "delay.h"
 #include "OLED.H"
+#include "beep.h"      // 添加蜂鸣器头文件
+#include "Servo.h"     // 添加舵机头文件
+#include "PWM.h"       // 添加PWM头文件
+#include "sys.h"       // 添加系统头文件
 
 
 #define WZ DHT11_Data.temp_int	
@@ -25,6 +29,12 @@ extern uint8_t bao;
 extern uint8_t window;
 extern uint8_t rana;
 extern uint8_t ranb;
+extern void fengkai(void);
+extern void fengguan(void);
+extern void shuikai(void);
+extern void shuiguan(void);
+extern uint8_t auto_fan_state;
+extern uint8_t auto_pump_state;
 extern char RECS[250];
 // WiFi和MQTT配置参数
 const char* WIFI ="1234";               // WiFi名称
@@ -33,7 +43,8 @@ const char* ClintID="123";              // 设备ID
 const char* username="7ingkW90fd";      // 产品id
 const char* passwd="version=2018-10-31&res=products%2F7ingkW90fd&et=1803715797&method=sha1&sign=%2BdmILYSTZUAL2aGPlzmmXFj8Cuo%3D";//密钥
 const char* Url="mqtts.heclouds.com";  // 云MQTT服务器
-const char* pubtopic="$sys/7ingkW90fd/123/thing/property/post";    // 发布主题
+const char* pubtopic="$sys/7ingkW90fd/123/thing/property/post"; 
+// 发布主题
 const char* subtopic="$sys/7ingkW90fd/123/thing/property/post/reply";  // 订阅主题
 const char* func1="temperature";  // 温度
 const char* func2="humidity";  // 湿度
@@ -277,82 +288,90 @@ printf("AT+MQTTPUB=0,\"$sys/7ingkW90fd/123/thing/property/post\",\"{\\\"id\\\":\
 }*/
 void CommandAnalyse(void)
 {
-    // 检查是否收到MQTT消息
     if(strncmp(RECS,"+MQTTSUBRECV:",13)==0)
     {
         uint8_t i=0;
-        uint8_t state_changed = 0;  // 用于跟踪状态是否改变
-
-        while(RECS[i++] != '\0')             
+        while(RECS[i] != '\0')
         {
-            // 处理风扇控制命令
+            // 解析风扇控制命令
             if(strncmp((RECS+i),func4,4)==0)
             { 
-                while(RECS[i++] != ':');
-                uint8_t new_feng = RECS[i] - '0';  // 转换字符为数值
-                if(feng != new_feng) {
-                    feng = new_feng;
-                    state_changed = 1;
-                }
-            }
-            // 处理水泵控制命令
-            if(strncmp((RECS+i),func9,4)==0)
-            {
-                while(RECS[i++] != ':');
-                uint8_t new_shui = RECS[i] - '0';
-                if(shui != new_shui) {
-                    shui = new_shui;
-                    state_changed = 1;
-                }
-            }
-            // 处理报警器控制命令
-            if(strncmp((RECS+i),func10,3)==0)
-            {
-                while(RECS[i++] != ':');
-                uint8_t new_bao = RECS[i] - '0';
-                if(bao != new_bao) {
-                    bao = new_bao;
-                    state_changed = 1;
-                }
-            }
-            // 处理窗户控制命令
-            if(strncmp((RECS+i),func11,2)==0)
-            {
-                while(RECS[i++] != ':');
-                uint8_t new_fa = RECS[i] - '0';
-                if(window != new_fa) {
-                    window = new_fa;
-                    state_changed = 1;
+                while(RECS[i] != ':') i++;
+                i++;
+                feng = RECS[i] - '0';
+                if(feng == 1) {
+                    fengkai();
+                    auto_fan_state = 0;  // 关闭自动控制
+                } else {
+                    fengguan();
                 }
             }
             
-            // 处理阈值设置命令
+            // 解析水泵控制命令
+            if(strncmp((RECS+i),func9,4)==0)
+            {
+                while(RECS[i] != ':') i++;
+                i++;
+                shui = RECS[i] - '0';
+                if(shui == 1) {
+                    shuikai();
+                    auto_pump_state = 0;  // 关闭自动控制
+                } else {
+                    shuiguan();
+                }
+            }
+            
+            // 解析报警器控制命令
+            if(strncmp((RECS+i),func10,3)==0)
+            {
+                while(RECS[i] != ':') i++;
+                i++;
+                bao = RECS[i] - '0';
+                BEEP_SetState(bao);  // 使用BEEP控制函数
+            }
+            
+            // 解析窗户控制命令
+            if(strncmp((RECS+i),func11,6)==0)
+            {
+                while(RECS[i] != ':') i++;
+                i++;
+                window = RECS[i] - '0';
+                if(window == 1) {
+                    Servo_SetAngle(180);
+                } else {
+                    Servo_SetAngle(0);
+                }
+            }
+            
+            // 其他控制命令解析保持不变...
             if(strncmp((RECS+i),func7,4)==0)
             {
-                while(RECS[i++] != ':');
+                while(RECS[i] != ':') i++;
+                i++;
                 wena = RECS[i] - '0';
             }
             if(strncmp((RECS+i),func8,4)==0)
             {
-                while(RECS[i++] != ':');
+                while(RECS[i] != ':') i++;
+                i++;
                 wenb = RECS[i] - '0';
             }
             if(strncmp((RECS+i),func14,4)==0)
             {
-                while(RECS[i++] != ':');
+                while(RECS[i] != ':') i++;
+                i++;
                 rana = RECS[i] - '0';
             }
             if(strncmp((RECS+i),func15,4)==0)
             {
-                while(RECS[i++] != ':');
+                while(RECS[i] != ':') i++;
+                i++;
                 ranb = RECS[i] - '0';
             }
+            i++;
         }
         
-        // 如果设备状态发生改变，立即上报新状态
-        if(state_changed)
-        {
-            Esp_PUB();
-        }
+        // 状态改变后上报
+        Esp_PUB();
     }
 }
