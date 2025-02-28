@@ -17,7 +17,7 @@
 #include "stepmotor.h"
 #include <stdio.h>
 #include <string.h>
-static uint8_t error_count = 0;
+
 #define MAX_ERROR_COUNT 3  // 最大错误次数
 
 // 变量定义
@@ -61,8 +61,6 @@ uint8_t window=0;// 窗户（舵机）控制位
 uint8_t rana=0;// 燃气co阈值增加控制位
 uint8_t ranb=0;  // 燃气co阈值减少控制位
 uint8_t display_page = 0;
-static uint8_t auto_fan_state = 0;    // 风扇自动控制状态
-static uint8_t auto_pump_state = 0;   // 水泵自动控制状态
 #define WZ DHT11_Data.temp_int	
 #define WX DHT11_Data.temp_deci
 #define SZ DHT11_Data.humi_int	
@@ -82,14 +80,19 @@ void IWDG_Init(void)
 
 
  // 远程控制设备处理函数
+
+   
+      
+    
+    
+  // 远程控制处理函数
 static void Handle_Remote_Control(void)
 {
-    // 使用静态变量记录上一次的状态
+    // 使用静态变量记录上一次的状态 - 删除prev_bao
     static uint8_t prev_feng = 0;
     static uint8_t prev_shui = 0;
-    static uint8_t prev_fa = 0;
-    static uint8_t prev_bao = 0;
-    uint8_t state_changed = 0;  // 使用uint8_t替代bool
+    static uint8_t prev_window = 0;
+    uint8_t state_changed = 0;
 
     // 风扇控制
     if(feng != prev_feng) {
@@ -115,23 +118,14 @@ static void Handle_Remote_Control(void)
         state_changed = 1;
     }
 
-    // 蜂鸣器控制
-    if(bao != prev_bao) {
-        BEEP = bao;
-        prev_bao = bao;
-        state_changed = 1;
-    }
-
-    // 窗户（舵机）控制
-    if(window != prev_fa) {
+    // 窗户控制
+    if(window != prev_window) {
         if(window == 1) {
             Servo_SetAngle(180);
-            flag6 = 1;
         } else {
             Servo_SetAngle(0);
-            flag6 = 0;
         }
-        prev_fa = window;
+        prev_window = window;
         state_changed = 1;
     }
 
@@ -181,10 +175,6 @@ static void Handle_Remote_Control(void)
         cnt = 0;
     }
 }
-
-
-
-
 
 /***********************************************
  * 显示函数优化（保持原有功能）
