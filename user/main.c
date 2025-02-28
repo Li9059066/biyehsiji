@@ -17,7 +17,8 @@
 #include "stepmotor.h"
 #include <stdio.h>
 #include <string.h>
-
+static uint8_t error_count = 0;
+#define MAX_ERROR_COUNT 3  // 最大错误次数
 // 变量定义
 int MQ7_Value;//adc值
 uint16_t fire,y,r,w,h,Y,W,R;
@@ -55,7 +56,7 @@ uint8_t wena=0;// 温度阈值增加控制位
 uint8_t wenb=0;// 温度阈值减少控制位
 uint8_t shui=0;// 水泵控制位
 uint8_t bao=0; // 报警器控制位
-uint8_t fa=0;// 窗户（舵机）控制位
+uint8_t window=0;// 窗户（舵机）控制位
 uint8_t rana=0;// 燃气co阈值增加控制位
 uint8_t ranb=0;  // 燃气co阈值减少控制位
 uint8_t display_page = 0;
@@ -76,6 +77,113 @@ void IWDG_Init(void)
     IWDG_ReloadCounter();                         // 喂狗
     IWDG_Enable();                                // 使能看门狗
 }
+
+
+
+ // 远程控制设备处理函数
+static void Handle_Remote_Control(void)
+{
+    // 使用静态变量记录上一次的状态
+    static uint8_t prev_feng = 0;
+    static uint8_t prev_shui = 0;
+    static uint8_t prev_fa = 0;
+    static uint8_t prev_bao = 0;
+    uint8_t state_changed = 0;  // 使用uint8_t替代bool
+
+    // 风扇控制
+    if(feng != prev_feng) {
+        if(feng == 1) {
+            fengkai();
+            auto_fan_state = 0;  // 取消自动控制状态
+        } else {
+            fengguan();
+        }
+        prev_feng = feng;
+        state_changed = 1;
+    }
+
+    // 水泵控制
+    if(shui != prev_shui) {
+        if(shui == 1) {
+            shuikai();
+            auto_pump_state = 0;  // 取消自动控制状态
+        } else {
+            shuiguan();
+        }
+        prev_shui = shui;
+        state_changed = 1;
+    }
+
+    // 蜂鸣器控制
+    if(bao != prev_bao) {
+        BEEP = bao;
+        prev_bao = bao;
+        state_changed = 1;
+    }
+
+    // 窗户（舵机）控制
+    if(window != prev_fa) {
+        if(window == 1) {
+            Servo_SetAngle(180);
+            flag6 = 1;
+        } else {
+            Servo_SetAngle(0);
+            flag6 = 0;
+        }
+        prev_fa = window;
+        state_changed = 1;
+    }
+
+    // 阈值远程调节
+    if(wena == 1) {
+        if(tem < 40) {
+            tem++;
+            state_changed = 1;
+        }
+    }
+    if(wenb == 1) {
+        if(tem > 20) {
+            tem--;
+            state_changed = 1;
+        }
+    }
+    
+    if(yan1 == 1) {
+        if(yan < 80) {
+            yan++;
+            state_changed = 1;
+        }
+    }
+    if(yan2 == 1) {
+        if(yan > 20) {
+            yan--;
+            state_changed = 1;
+        }
+    }
+    
+    if(rana == 1) {
+        if(ran < 80) {
+            ran++;
+            state_changed = 1;
+        }
+    }
+    if(ranb == 1) {
+        if(ran > 20) {
+            ran--;
+            state_changed = 1;
+        }
+    }
+
+    // 如果状态发生改变且WiFi连接正常，立即上报
+    if(state_changed && !Judge) {
+        Esp_PUB();
+        cnt = 0;
+    }
+}
+
+
+
+
 
 /***********************************************
  * 显示函数优化（保持原有功能）
@@ -157,15 +265,27 @@ static void Process_Key_Events(void)
             case KEY0_PRES:  // 风扇+窗户控制
                 auto_fan_state = 0;
                 feng ^= 1;
-                fa = feng;
+                window = feng;
                 feng ? (fengkai(), Servo_SetAngle(180)) : 
                       (fengguan(), Servo_SetAngle(0));
+                // 状态改变后直接上报
+                if(!Judge)
+                {
+                    Esp_PUB();
+                    cnt = 0;
+                }
                 break;
 
             case KEY1_PRES:  // 水泵控制
                 auto_pump_state = 0;
                 shui ^= 1;
                 shui ? shuikai() : shuiguan();
+                // 状态改变后直接上报
+                if(!Judge)
+                {
+                    Esp_PUB();
+                    cnt = 0;
+                }
                 break;
 
             case KEY2_PRES:  // 模式切换
@@ -184,32 +304,63 @@ static void Process_Key_Events(void)
  ***********************************************/
 static void Auto_Control_System(void)
 {
-	// 报警优先级逻辑优化（增加解除条件）
     if(fire) {
         BEEP = 1;  // 火灾报警最高优先级
         if(!auto_pump_state) {
+					   fire = 1;
             shuikai(); // 自动开启水泵
-            auto_pump_state = 1;  // 设置自动控制标志位
+            auto_pump_state = 1;
+            shui = 1;
+            // 状态改变后直接上报
+            if(!Judge)
+            {
+                Esp_PUB();
+                cnt = 0;
+            }
         }
     } 
     else if(MQ2_Value > yan || MQ7_Value > ran || DHT11_Data.temp_int > tem) {
-        BEEP = 1;  // 其他条件报警
+        BEEP = 1;
         if(!auto_fan_state) {
             fengkai();
-            Servo_SetAngle(180); // 自动开启风扇和窗户
-            auto_fan_state = 1;  // 设置自动控制标志位
+            Servo_SetAngle(180);
+            auto_fan_state = 1;
+            feng = 1;
+            window = 1;
+            // 状态改变后直接上报
+            if(!Judge)
+            {
+                Esp_PUB();
+                cnt = 0;
+            }
         }
     } 
     else {
-        BEEP = 0;  // 所有条件正常时关闭
+        BEEP = 0;
         if(auto_pump_state) {
             shuiguan(); 
-            auto_pump_state = 0;  // 清除自动控制标志位
+            auto_pump_state = 0;
+            shui = 0;
+					  fire = 0;
+            // 状态改变后直接上报
+            if(!Judge)
+            {
+                Esp_PUB();
+                cnt = 0;
+            }
         }
         if(auto_fan_state) {
             fengguan();
             Servo_SetAngle(0); 
-            auto_fan_state = 0;  // 清除自动控制标志位
+            auto_fan_state = 0;
+            feng = 0;
+            window = 0;
+            // 状态改变后直接上报
+            if(!Judge)
+            {
+                Esp_PUB();
+                cnt = 0;
+            }
         }
     }
 }
@@ -236,7 +387,7 @@ int main(void)
     while(1)
     {  
 
-IWDG_ReloadCounter();  // 添加这一行，定期喂狗
+         IWDG_ReloadCounter();  // 添加这一行，定期喂狗
 			
 			 // 更新传感器数据
         Update_Sensor_Data();
@@ -248,6 +399,21 @@ IWDG_ReloadCounter();  // 添加这一行，定期喂狗
         Auto_Control_System();
        
        
+		        // WiFi数据上报
+       // 在main函数的while(1)循环中：
+if(!Judge)  // WiFi连接正常
+{
+    cnt++;
+    if(cnt >= 6)  // 缩短发送间隔
+    {
+        if(Esp_PUB() == 1)  // 发送失败
+        {
+            Judge = esp_Init();  // 重新初始化
+        }
+        cnt = 0;
+    }
+}
+
 			 /* 显示系统 */
         if(flag3 == 4)
         {
@@ -269,12 +435,9 @@ IWDG_ReloadCounter();  // 添加这一行，定期喂狗
         }
         
 
-       
-       
-		        
-		
-        // 按键切换模式
-         
+				Handle_Remote_Control();
+
+        
 	
         
 
@@ -283,87 +446,75 @@ IWDG_ReloadCounter();  // 添加这一行，定期喂狗
 
 
 // 远程控制处理（放在主循环中）
-if(flag3 == 4)
-{
+   /*    if(flag3 == 4)
+     {
     // 温度阈值远程调节
-    if(wena == 1)
-    {
+       if(wena == 1)
+       {
         tem = tem + 1;
         if(tem > 40) tem = 40;
-    }
-    if(wenb == 1)
-    {
-        tem = tem - 1;
-        if(tem < 20) tem = 20;
-    }
+       }
+        if(wenb == 1)
+       {
+           tem = tem - 1;
+           if(tem < 20) tem = 20;
+       }
     
-    // 烟雾阈值远程调节
-    if(yan1 == 1)
-    {
-        yan = yan + 1;
-        if(yan > 80) yan = 80;
-    }
-    if(yan2 == 1)
-    {
-        yan = yan - 1;
-        if(yan < 20) yan = 20;
-    }
+       // 烟雾阈值远程调节
+       if(yan1 == 1)
+       {
+           yan = yan + 1;
+          if(yan > 80) yan = 80;
+       }
+       if(yan2 == 1)
+       {
+           yan = yan - 1;
+            if(yan < 20) yan = 20;
+       }
     
-    // CO阈值远程调节
-    if(rana == 1)
-    {
-        ran = ran + 1;
-        if(ran > 80) ran = 80;
-    }
-    if(ranb == 1)
-    {
-        ran = ran - 1;
-        if(ran < 20) ran = 20;
-    }
+       // CO阈值远程调节
+       if(rana == 1)
+       {
+           ran = ran + 1;
+           if(ran > 80) ran = 80;
+       }
+       if(ranb == 1)
+      {
+           ran = ran - 1;
+           if(ran < 20) ran = 20;
+       }
     
-    // 远程设备控制（保持原有功能）
-    if(feng == 1)
-        fengkai();
-    else if(feng == 0)
-        fengguan();
+       // 远程设备控制（保持原有功能）
+       if(feng == 1)
+           fengkai();
+       else if(feng == 0)
+           fengguan();
         
-    if(shui == 1)
-        shuikai();
-    else if(shui == 0)
-        shuiguan();
+       if(shui == 1)
+          shuikai();
+       else if(shui == 0)
+           shuiguan();
         
-    if(bao == 1)
+       if(bao == 1)
         BEEP = 1;
-    else if(bao == 0)
-        BEEP = 0;
+       else if(bao == 0)
+           BEEP = 0;
         
-    if(fa == 1 && flag6 == 0)
-    {
-        Servo_SetAngle(180);
-        flag6 = 1;
-    }
-    else if(fa == 0 && flag6 == 1)
-    {
-        Servo_SetAngle(0);
-        flag6 = 0;
-    }
-}
+        if(window == 1 && flag6 == 0)
+       {
+           Servo_SetAngle(180);
+           flag6 = 1;
+       }
+       else if(window == 0 && flag6 == 1)
+       {
+          Servo_SetAngle(0);
+           flag6 = 0;
+       }
+   }
        
 
-        
-        // WiFi数据上报
-        if(!Judge)
-        {
-            cnt++;
-            if(cnt >= 6)
-            {
-                if(Esp_PUB() == 1)
-                {
-                    Delay_ms(200);
-                }
-                cnt = 0;
-            }
-        }
+        */
+
         
         OLED_Update();
         Delay_ms(100);
