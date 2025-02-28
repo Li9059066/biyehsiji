@@ -1,4 +1,5 @@
-#include "stm32f10x.h"                
+#include "stm32f10x.h" 
+#include "stm32f10x_iwdg.h"  // 添加这一行
 #include "delay.h"
 #include "OLED.h"
 #include "OELD_Data.h"
@@ -64,6 +65,17 @@ static uint8_t auto_pump_state = 0;   // 水泵自动控制状态
 #define WX DHT11_Data.temp_deci
 #define SZ DHT11_Data.humi_int	
 #define SX DHT11_Data.humi_deci
+
+
+
+void IWDG_Init(void)
+{
+    IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);  // 使能写入功能
+    IWDG_SetPrescaler(IWDG_Prescaler_256);        // 设置256分频
+    IWDG_SetReload(1562);                         // 设置重装载值（约10秒）
+    IWDG_ReloadCounter();                         // 喂狗
+    IWDG_Enable();                                // 使能看门狗
+}
 
 /***********************************************
  * 显示函数优化（保持原有功能）
@@ -173,37 +185,40 @@ static void Process_Key_Events(void)
 static void Auto_Control_System(void)
 {
 	// 报警优先级逻辑优化（增加解除条件）
-if(fire) {
-    BEEP = 1;  // 火灾报警最高优先级
-    if(!auto_pump_state) 
-			shuikai(); // 自动开启水泵
-} 
-else if(MQ2_Value > yan || MQ7_Value > ran || DHT11_Data.temp_int > tem) {
-    BEEP = 1;  // 其他条件报警
-    if(!auto_fan_state) {
-        fengkai();
-        Servo_SetAngle(180); // 自动开启风扇和窗户
-    }
-} 
-else {
-    BEEP = 0;  // 所有条件正常时关闭
-    if(auto_pump_state) {
-        shuiguan(); 
-        auto_pump_state = 0;  // 新增状态更新
-    }
-    if(auto_fan_state) {
-        fengguan();
-        Servo_SetAngle(0); 
-        auto_fan_state = 0;  // 新增状态更新
+    if(fire) {
+        BEEP = 1;  // 火灾报警最高优先级
+        if(!auto_pump_state) {
+            shuikai(); // 自动开启水泵
+            auto_pump_state = 1;  // 设置自动控制标志位
+        }
+    } 
+    else if(MQ2_Value > yan || MQ7_Value > ran || DHT11_Data.temp_int > tem) {
+        BEEP = 1;  // 其他条件报警
+        if(!auto_fan_state) {
+            fengkai();
+            Servo_SetAngle(180); // 自动开启风扇和窗户
+            auto_fan_state = 1;  // 设置自动控制标志位
+        }
+    } 
+    else {
+        BEEP = 0;  // 所有条件正常时关闭
+        if(auto_pump_state) {
+            shuiguan(); 
+            auto_pump_state = 0;  // 清除自动控制标志位
+        }
+        if(auto_fan_state) {
+            fengguan();
+            Servo_SetAngle(0); 
+            auto_fan_state = 0;  // 清除自动控制标志位
+        }
     }
 }
 	
-	
-}
 
 int main(void)
 {   
-	    // 初始化外设
+	    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+
     MyUSART_Init();
     AD_Init();
     Adc_Init();
@@ -215,15 +230,23 @@ int main(void)
     Adc_Init1();
     MOTOR_Init();
     Servo_Init();
+	 IWDG_Init();  // 添加这一行，初始化看门狗
     // 尝试连接WiFi，但不阻塞程序
     Judge = esp_Init();
     while(1)
-    {    
-			// 在循环开始处更新温湿度值
-   /* 主循环任务 */
+    {  
+
+IWDG_ReloadCounter();  // 添加这一行，定期喂狗
+			
+			 // 更新传感器数据
         Update_Sensor_Data();
+        
+        // 处理按键事件
         Process_Key_Events();
+        
+        // 自动控制系统
         Auto_Control_System();
+       
        
 			 /* 显示系统 */
         if(flag3 == 4)
@@ -245,22 +268,6 @@ int main(void)
             Update_Display_Content();
         }
         
-        OLED_Update();
-        Delay_ms(100);
-				
-        // WiFi连接成功才执行数据上报
-        if(!Judge)
-        {
-            cnt++;
-            if(cnt==6) //约每6s执行一次数据上报
-            {
-                if(Esp_PUB() == 1)
-                {
-                    Delay_ms(200);
-                }
-                cnt=0;                     
-            }
-        }
 
        
        
@@ -348,7 +355,7 @@ if(flag3 == 4)
         if(!Judge)
         {
             cnt++;
-            if(cnt == 6)
+            if(cnt >= 6)
             {
                 if(Esp_PUB() == 1)
                 {
