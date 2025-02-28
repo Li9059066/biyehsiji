@@ -33,8 +33,8 @@ extern void fengkai(void);
 extern void fengguan(void);
 extern void shuikai(void);
 extern void shuiguan(void);
-extern uint8_t auto_fan_state;
-extern uint8_t auto_pump_state;
+ uint8_t auto_fan_state=0;
+ uint8_t auto_pump_state=0;
 extern char RECS[250];
 // WiFi和MQTT配置参数
 const char* WIFI ="1234";               // WiFi名称
@@ -293,57 +293,48 @@ void CommandAnalyse(void)
         uint8_t i=0;
         while(RECS[i] != '\0')
         {
-            // 解析风扇控制命令
+            // 风扇控制命令
             if(strncmp((RECS+i),func4,4)==0)
             { 
                 while(RECS[i] != ':') i++;
                 i++;
                 feng = RECS[i] - '0';
                 if(feng == 1) {
-                    fengkai();
+                    fengkai();  // 使用已有的风扇开启函数
                     auto_fan_state = 0;  // 关闭自动控制
                 } else {
-                    fengguan();
+                    fengguan();  // 使用已有的风扇关闭函数
                 }
             }
             
-            // 解析水泵控制命令
+            // 水泵控制命令
             if(strncmp((RECS+i),func9,4)==0)
             {
                 while(RECS[i] != ':') i++;
                 i++;
                 shui = RECS[i] - '0';
                 if(shui == 1) {
-                    shuikai();
+                    shuikai();  // 使用已有的水泵开启函数
                     auto_pump_state = 0;  // 关闭自动控制
                 } else {
-                    shuiguan();
+                    shuiguan();  // 使用已有的水泵关闭函数
                 }
             }
             
-            // 解析报警器控制命令
-            if(strncmp((RECS+i),func10,3)==0)
-            {
-                while(RECS[i] != ':') i++;
-                i++;
-                bao = RECS[i] - '0';
-                BEEP_SetState(bao);  // 使用BEEP控制函数
-            }
-            
-            // 解析窗户控制命令
+            // 窗户控制命令
             if(strncmp((RECS+i),func11,6)==0)
             {
                 while(RECS[i] != ':') i++;
                 i++;
                 window = RECS[i] - '0';
                 if(window == 1) {
-                    Servo_SetAngle(180);
+                    Servo_SetAngle(180);  // 使用已有的舵机控制函数
                 } else {
                     Servo_SetAngle(0);
                 }
             }
             
-            // 其他控制命令解析保持不变...
+            // 温度阈值控制命令
             if(strncmp((RECS+i),func7,4)==0)
             {
                 while(RECS[i] != ':') i++;
@@ -356,6 +347,8 @@ void CommandAnalyse(void)
                 i++;
                 wenb = RECS[i] - '0';
             }
+            
+            // CO阈值控制命令
             if(strncmp((RECS+i),func14,4)==0)
             {
                 while(RECS[i] != ':') i++;
