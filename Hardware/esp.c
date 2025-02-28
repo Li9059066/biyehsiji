@@ -12,7 +12,7 @@
 #define SX DHT11_Data.humi_deci
 extern float wen1;
 extern float shi1;
-
+extern uint16_t fire;
 extern int MQ2_Value;
 extern int MQ7_Value;
 extern uint8_t yan1;
@@ -22,7 +22,7 @@ extern uint8_t wena;
 extern uint8_t wenb;
 extern uint8_t shui;
 extern uint8_t bao;
-extern uint8_t fa;
+extern uint8_t window;
 extern uint8_t rana;
 extern uint8_t ranb;
 extern char RECS[250];
@@ -45,13 +45,14 @@ const char* func7="wen1";
 const char* func8="wen2";
 const char* func9="shui";
 const char *func10="bao";
-const char *func11="fa";
+const char *func11="window";
 const char *func12="ran";
 const char *func14="ran1";
 const char *func15="ran2";
+const char *func16="fire";
 // 添加一个简单的错误计数器
 static uint8_t error_count = 0;
-#define MAX_ERROR_COUNT 3  // 最大错误次数
+#define MAX_ERROR_COUNT 1  // 最大错误次数
 
 int fputc(int ch,FILE *f )   //printf重定向  
 {
@@ -103,8 +104,7 @@ char esp_Init(void)
 }
 
 
-
-    char Esp_PUB(void)
+ char Esp_PUB(void)
 {
 	// 如果错误次数太多，重新初始化
     if(error_count >= MAX_ERROR_COUNT)
@@ -159,6 +159,20 @@ char esp_Init(void)
     memset(RECS, 0, sizeof(RECS));
     printf("AT+MQTTPUB=0,\"$sys/7ingkW90fd/123/thing/property/post\",\"{\\\"id\\\":\\\"123\\\"\\,\\\"params\\\":{\\\"%s\\\":{\\\"value\\\":%d\\}}}\",0,0\r\n",
            func9,shui);
+    Delay_ms(200);
+    if(strcmp(RECS,"ERROR")==0)
+        return 1;
+		// 1. 上报火焰数据
+    memset(RECS, 0, sizeof(RECS));
+    printf("AT+MQTTPUB=0,\"$sys/7ingkW90fd/123/thing/property/post\",\"{\\\"id\\\":\\\"123\\\"\\,\\\"params\\\":{\\\"%s\\\":{\\\"value\\\":%d\\}}}\",0,0\r\n",
+           func16,fire);
+    Delay_ms(200);
+    if(strcmp(RECS,"ERROR")==0)
+        return 1;
+		// 1. 上报数据窗户
+    memset(RECS, 0, sizeof(RECS));
+    printf("AT+MQTTPUB=0,\"$sys/7ingkW90fd/123/thing/property/post\",\"{\\\"id\\\":\\\"123\\\"\\,\\\"params\\\":{\\\"%s\\\":{\\\"value\\\":%d\\}}}\",0,0\r\n",
+           func11,fire);
     Delay_ms(200);
     if(strcmp(RECS,"ERROR")==0)
         return 1;
@@ -263,77 +277,82 @@ printf("AT+MQTTPUB=0,\"$sys/7ingkW90fd/123/thing/property/post\",\"{\\\"id\\\":\
 }*/
 void CommandAnalyse(void)
 {
-	// 检查是否收到MQTT消息
-	if(strncmp(RECS,"+MQTTSUBRECV:",13)==0)
-	{
-		uint8_t i=0;
-		while(RECS[i++] != '\0')             
-		{
-			 // 处理风扇控制命令
+    // 检查是否收到MQTT消息
+    if(strncmp(RECS,"+MQTTSUBRECV:",13)==0)
+    {
+        uint8_t i=0;
+        uint8_t state_changed = 0;  // 用于跟踪状态是否改变
+
+        while(RECS[i++] != '\0')             
+        {
+            // 处理风扇控制命令
             if(strncmp((RECS+i),func4,4)==0)
-			{ 
-				while(RECS[i++] != ':');
-				feng=RECS[i];
-			}
-			 // 处理烟雾传感器1控制
-			if(strncmp((RECS+i),func5,4)==0)
-			{
-				while(RECS[i++] != ':');       
-				yan1=RECS[i];
-			}
-			 // 传感器控制
-			if(strncmp((RECS+i),func6,4)==0)
-			{
-				while(RECS[i++] != ':');
-				yan2=RECS[i];
-			}
-			 // 处理报警器控制
-			if(strncmp((RECS+i),func7,4)==0)
-			{
-				while(RECS[i++] != ':');
-				wena=RECS[i];
-			}
-			// 处理窗户控制
-			if(strncmp((RECS+i),func8,4)==0)
-			{
-				while(RECS[i++] != ':');
-				wenb=RECS[i];
-			}
-			
-			if(strncmp((RECS+i),func9,4)==0)
-			{
-				while(RECS[i++] != ':');
-				shui=RECS[i];
-			}
-			if(strncmp((RECS+i),func10,3)==0)
-			{
-				while(RECS[i++] != ':');
-				bao=RECS[i];
-			}
-				if(strncmp((RECS+i),func11,2)==0)
-			{
-				while(RECS[i++] != ':');
-				fa=RECS[i];
-			}
-			if(strncmp((RECS+i),func14,4)==0)
-			{
-				while(RECS[i++] != ':');
-				rana=RECS[i];
-			}
-			if(strncmp((RECS+i),func15,4)==0)
-			{
-				while(RECS[i++] != ':');
-				ranb=RECS[i];
-			}
-		}
-	}
+            { 
+                while(RECS[i++] != ':');
+                uint8_t new_feng = RECS[i] - '0';  // 转换字符为数值
+                if(feng != new_feng) {
+                    feng = new_feng;
+                    state_changed = 1;
+                }
+            }
+            // 处理水泵控制命令
+            if(strncmp((RECS+i),func9,4)==0)
+            {
+                while(RECS[i++] != ':');
+                uint8_t new_shui = RECS[i] - '0';
+                if(shui != new_shui) {
+                    shui = new_shui;
+                    state_changed = 1;
+                }
+            }
+            // 处理报警器控制命令
+            if(strncmp((RECS+i),func10,3)==0)
+            {
+                while(RECS[i++] != ':');
+                uint8_t new_bao = RECS[i] - '0';
+                if(bao != new_bao) {
+                    bao = new_bao;
+                    state_changed = 1;
+                }
+            }
+            // 处理窗户控制命令
+            if(strncmp((RECS+i),func11,2)==0)
+            {
+                while(RECS[i++] != ':');
+                uint8_t new_fa = RECS[i] - '0';
+                if(window != new_fa) {
+                    window = new_fa;
+                    state_changed = 1;
+                }
+            }
+            
+            // 处理阈值设置命令
+            if(strncmp((RECS+i),func7,4)==0)
+            {
+                while(RECS[i++] != ':');
+                wena = RECS[i] - '0';
+            }
+            if(strncmp((RECS+i),func8,4)==0)
+            {
+                while(RECS[i++] != ':');
+                wenb = RECS[i] - '0';
+            }
+            if(strncmp((RECS+i),func14,4)==0)
+            {
+                while(RECS[i++] != ':');
+                rana = RECS[i] - '0';
+            }
+            if(strncmp((RECS+i),func15,4)==0)
+            {
+                while(RECS[i++] != ':');
+                ranb = RECS[i] - '0';
+            }
+        }
+        
+        // 如果设备状态发生改变，立即上报新状态
+        if(state_changed)
+        {
+            Esp_PUB();
+        }
+    }
 }
-
-
-
-
-
-
-
-
-
