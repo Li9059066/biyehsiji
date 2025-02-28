@@ -19,6 +19,7 @@
 #include <string.h>
 static uint8_t error_count = 0;
 #define MAX_ERROR_COUNT 3  // 最大错误次数
+
 // 变量定义
 int MQ7_Value;//adc值
 uint16_t fire,y,r,w,h,Y,W,R;
