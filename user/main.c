@@ -50,16 +50,14 @@ uint8_t temp_deci;    // 温度小数部分
 uint8_t humi_int;     // 湿度整数部分
 uint8_t humi_deci;    // 湿度小数部分
 // 远程控制标志位（'0'表示关闭，'1'表示开启）
-uint8_t yan1=0;// 烟雾阈值增加控制位
-uint8_t yan2=0;// 烟雾阈值减少控制位
+uint8_t yan1=0;// 烟雾阈值kongzhi
+
 uint8_t feng=0;// 风扇控制位
-uint8_t wena=0;// 温度阈值增加控制位
-uint8_t wenb=0;// 温度阈值减少控制位
+uint8_t wena=0;// 温度阈值控制位
 uint8_t shui=0;// 水泵控制位
-uint8_t bao=0; // 报警器控制位
 uint8_t window=0;// 窗户（舵机）控制位
-uint8_t rana=0;// 燃气co阈值增加控制位
-uint8_t ranb=0;  // 燃气co阈值减少控制位
+uint8_t rana=0;// 燃气co阈值控制位
+
 uint8_t display_page = 0;
 #define WZ DHT11_Data.temp_int	
 #define WX DHT11_Data.temp_deci
@@ -85,96 +83,8 @@ void IWDG_Init(void)
       
     
     
-  // 远程控制处理函数
-static void Handle_Remote_Control(void)
-{
-    // 使用静态变量记录上一次的状态 - 删除prev_bao
-    static uint8_t prev_feng = 0;
-    static uint8_t prev_shui = 0;
-    static uint8_t prev_window = 0;
-    uint8_t state_changed = 0;
-
-    // 风扇控制
-    if(feng != prev_feng) {
-        if(feng == 1) {
-            fengkai();
-            auto_fan_state = 0;  // 取消自动控制状态
-        } else {
-            fengguan();
-        }
-        prev_feng = feng;
-        state_changed = 1;
-    }
-
-    // 水泵控制
-    if(shui != prev_shui) {
-        if(shui == 1) {
-            shuikai();
-            auto_pump_state = 0;  // 取消自动控制状态
-        } else {
-            shuiguan();
-        }
-        prev_shui = shui;
-        state_changed = 1;
-    }
-
-    // 窗户控制
-    if(window != prev_window) {
-        if(window == 1) {
-            Servo_SetAngle(180);
-        } else {
-            Servo_SetAngle(0);
-        }
-        prev_window = window;
-        state_changed = 1;
-    }
-
-    // 阈值远程调节
-    if(wena == 1) {
-        if(tem < 40) {
-            tem++;
-            state_changed = 1;
-        }
-    }
-    if(wenb == 1) {
-        if(tem > 20) {
-            tem--;
-            state_changed = 1;
-        }
-    }
-    
-    if(yan1 == 1) {
-        if(yan < 80) {
-            yan++;
-            state_changed = 1;
-        }
-    }
-    if(yan2 == 1) {
-        if(yan > 20) {
-            yan--;
-            state_changed = 1;
-        }
-    }
-    
-    if(rana == 1) {
-        if(ran < 80) {
-            ran++;
-            state_changed = 1;
-        }
-    }
-    if(ranb == 1) {
-        if(ran > 20) {
-            ran--;
-            state_changed = 1;
-        }
-    }
-
-    // 如果状态发生改变且WiFi连接正常，立即上报
-    if(state_changed && !Judge) {
-        Esp_PUB();
-        cnt = 0;
-    }
-}
+  
+   
 
 /***********************************************
  * 显示函数优化（保持原有功能）
@@ -408,6 +318,8 @@ if(!Judge)  // WiFi连接正常
 			 /* 显示系统 */
         if(flag3 == 4)
         {
+					
+					
             OLED_Clear();
             OLED_ShowChinese(0, 0, "远程");
             OLED_ShowChinese(0, 16, "温度:");
@@ -419,14 +331,13 @@ if(!Judge)  // WiFi连接正常
             OLED_ShowString(0, 48, "CO:", OLED_8X16);
             OLED_ShowNum(32, 48, ran, 2, OLED_8X16);
             OLED_ShowString(56, 48, "%", OLED_8X16);
+					CommandAnalyse();
         }
         else
         {
             Update_Display_Content();
         }
         
-
-				Handle_Remote_Control();
 
         
 	
