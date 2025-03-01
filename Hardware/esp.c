@@ -8,7 +8,7 @@
 #include "Servo.h"     // 添加舵机头文件
 #include "PWM.h"       // 添加PWM头文件
 #include "sys.h"       // 添加系统头文件
-
+#include "esp.h"
 
 #define WZ DHT11_Data.temp_int	
 #define WX DHT11_Data.temp_deci
@@ -20,15 +20,15 @@ extern uint16_t fire;
 extern int MQ2_Value;
 extern int MQ7_Value;
 extern uint8_t yan1;
-extern uint8_t yan2;
+
 extern uint8_t feng;
 extern uint8_t wena;
-extern uint8_t wenb;
+
 extern uint8_t shui;
 extern uint8_t bao;
 extern uint8_t window;
 extern uint8_t rana;
-extern uint8_t ranb;
+
 extern void fengkai(void);
 extern void fengguan(void);
 extern void shuikai(void);
@@ -45,21 +45,19 @@ const char* passwd="version=2018-10-31&res=products%2F7ingkW90fd&et=1803715797&m
 const char* Url="mqtts.heclouds.com";  // 云MQTT服务器
 const char* pubtopic="$sys/7ingkW90fd/123/thing/property/post"; 
 // 发布主题
-const char* subtopic="$sys/7ingkW90fd/123/thing/property/post/reply";  // 订阅主题
+const char* subtopic="$sys/7ingkW90fd/123/thing/property/set";  // 订阅主题
 const char* func1="temperature";  // 温度
 const char* func2="humidity";  // 湿度
 const char* func3="yan";  // 烟雾
 const char* func4="feng"; // 风扇
 const char* func5="yan1"; // 烟雾1
-const char* func6="yan2";	 // 烟雾2
+	 // 烟雾2
 const char* func7="wen1";
-const char* func8="wen2";
+
 const char* func9="shui";
-const char *func10="bao";
 const char *func11="window";
 const char *func12="ran";
 const char *func14="ran1";
-const char *func15="ran2";
 const char *func16="fire";
 // 添加一个简单的错误计数器
 static uint8_t error_count = 0;
@@ -334,37 +332,52 @@ void CommandAnalyse(void)
                 }
             }
             
-            // 温度阈值控制命令
-            if(strncmp((RECS+i),func7,4)==0)
+           // 温度阈值直接设置
+            if(strncmp((RECS+i),"yan1:",5)==0)  // 使用TEMP:作为温度设置命令
             {
-                while(RECS[i] != ':') i++;
-                i++;
-                wena = RECS[i] - '0';
-            }
-            if(strncmp((RECS+i),func8,4)==0)
-            {
-                while(RECS[i] != ':') i++;
-                i++;
-                wenb = RECS[i] - '0';
+                while(RECS[i++] != ':');
+                uint8_t value = 0;
+                // 读取数字字符串并转换为数值
+                while(RECS[i] >= '0' && RECS[i] <= '9')
+                {
+                    value = value * 10 + (RECS[i] - '0');
+                    i++;
+                }
+                if(value >= 15 && value <= 40)  // 温度范围限制15-40
+                    tem = value;
             }
             
-            // CO阈值控制命令
-            if(strncmp((RECS+i),func14,4)==0)
+            // 烟雾阈值直接设置
+            if(strncmp((RECS+i),"yana:",6)==0)  // 使用SMOKE:作为烟雾设置命令
             {
-                while(RECS[i] != ':') i++;
-                i++;
-                rana = RECS[i] - '0';
+                while(RECS[i++] != ':');
+                uint8_t value = 0;
+                while(RECS[i] >= '0' && RECS[i] <= '9')
+                {
+                    value = value * 10 + (RECS[i] - '0');
+                    i++;
+                }
+                if(value >= 20 && value <= 80)  // 烟雾范围限制20-80
+                    yan = value;
             }
-            if(strncmp((RECS+i),func15,4)==0)
+            
+            // CO阈值直接设置
+            if(strncmp((RECS+i),"rana:",3)==0)  // 使用CO:作为CO设置命令
             {
-                while(RECS[i] != ':') i++;
-                i++;
-                ranb = RECS[i] - '0';
+                while(RECS[i++] != ':');
+                uint8_t value = 0;
+                while(RECS[i] >= '0' && RECS[i] <= '9')
+                {
+                    value = value * 10 + (RECS[i] - '0');
+                    i++;
+                }
+                if(value >= 20 && value <= 80)  // CO范围限制20-80
+                    ran = value;
             }
-            i++;
-        }
         
-        // 状态改变后上报
+    
+
         Esp_PUB();
     }
 }
+		}
