@@ -8,7 +8,7 @@
 #include "Servo.h"     // 添加舵机头文件
 #include "PWM.h"       // 添加PWM头文件
 #include "sys.h"       // 添加系统头文件
-
+#include "esp.h" 
 
 #define WZ DHT11_Data.temp_int	
 #define WX DHT11_Data.temp_deci
@@ -61,7 +61,12 @@ const char *func12="ran";
 const char *func14="ran1";
 const char *func15="ran2";
 const char *func16="fire";
+
+
+
 // 添加一个简单的错误计数器
+
+
 static uint8_t error_count = 0;
 #define MAX_ERROR_COUNT 6  // 最大错误次数
 
@@ -106,13 +111,29 @@ char esp_Init(void)
 	if(strcmp(RECS,"OK"))
 		return 5;
 	
-	printf("AT+MQTTSUB=0,\"%s\",1\r\n",subtopic); //订阅消息
+	printf("AT+MQTTSUB=0,\"%s\",0\r\n",subtopic); //订阅消息
 	Delay_ms(500);
 	if(strcmp(RECS,"OK"))			
 		return 5;
 	memset(RECS,0,sizeof(RECS));
 	return 0;
 }
+
+uint8_t Check_Device_Online(void)
+{
+    
+    
+    // 检查MQTT连接
+    printf("AT+MQTTCONN?\r\n");
+    Delay_ms(100);
+    if(strstr((const char*)RECS, "+MQTTCONNECTED") == NULL)
+    {
+        return 0;
+    }
+    
+    return 1;
+}
+
 
 
  char Esp_PUB(void)
@@ -286,7 +307,44 @@ printf("AT+MQTTPUB=0,\"$sys/7ingkW90fd/123/thing/property/post\",\"{\\\"id\\\":\
 	//return 1;
 	return 0;
 }*/
-void CommandAnalyse(void)
+
+/*void CommandAnalyse(void)
+{
+    // 1. 检查是否收到MQTT消息
+    if(strstr(RECS, "+MQTTSUBRECV:") == NULL)
+    {
+        return;
+    }
+
+    // 2. 简单检查是否是水泵控制命令
+    if(strstr(RECS, "\"shui\"") != NULL)
+    {
+        if(strstr(RECS, "\"value\":1") != NULL)
+        {
+            shuikai();
+        }
+        else
+        {
+            shuiguan();
+        }
+    }
+    // 3. 简单检查是否是风扇控制命令
+    else if(strstr(RECS, "\"feng\"") != NULL)
+    {
+        if(strstr(RECS, "\"value\":1") != NULL)
+        {
+            fengkai();
+        }
+        else
+        {
+            fengguan();
+        }
+    }
+
+    // 4. 清空接收缓冲区
+    memset(RECS, 0, sizeof(RECS));
+}*/
+/*void CommandAnalyse(void)
 {
     if(strncmp(RECS,"+MQTTSUBRECV:",13)==0)
     {
@@ -299,12 +357,7 @@ void CommandAnalyse(void)
                 while(RECS[i] != ':') i++;
                 i++;
                 feng = RECS[i] - '0';
-                if(feng == 1) {
-                    fengkai();  // 使用已有的风扇开启函数
-                    auto_fan_state = 0;  // 关闭自动控制
-                } else {
-                    fengguan();  // 使用已有的风扇关闭函数
-                }
+                
             }
             
             // 水泵控制命令
@@ -313,12 +366,7 @@ void CommandAnalyse(void)
                 while(RECS[i] != ':') i++;
                 i++;
                 shui = RECS[i] - '0';
-                if(shui == 1) {
-                    shuikai();  // 使用已有的水泵开启函数
-                    auto_pump_state = 0;  // 关闭自动控制
-                } else {
-                    shuiguan();  // 使用已有的水泵关闭函数
-                }
+               
             }
             
             // 窗户控制命令
@@ -327,44 +375,141 @@ void CommandAnalyse(void)
                 while(RECS[i] != ':') i++;
                 i++;
                 window = RECS[i] - '0';
-                if(window == 1) {
-                    Servo_SetAngle(180);  // 使用已有的舵机控制函数
-                } else {
-                    Servo_SetAngle(0);
-                }
+               
             }
             
-            // 温度阈值控制命令
-            if(strncmp((RECS+i),func7,4)==0)
+            if(strstr((const char*)RECS,"+MQTTSUBRECV:") != NULL)
+    {
+        // 处理温度阈值
+        if(strstr((const char*)RECS,"wena") != NULL)
+        {
+            int value;
+            sscanf(strstr((const char*)RECS,"value"), "value\":%d", &value);
+            if(value >= 0 && value <= 100)  // 确保值在合理范围内
             {
-                while(RECS[i] != ':') i++;
-                i++;
-                wena = RECS[i] - '0';
+                tem = value;
+                printf("温度阈值已更新为：%d\r\n", tem);
             }
-            if(strncmp((RECS+i),func8,4)==0)
+        }
+        
+        // 处理烟雾阈值
+        if(strstr((const char*)RECS,"yana") != NULL)
+        {
+            int value;
+            sscanf(strstr((const char*)RECS,"value"), "value\":%d", &value);
+            if(value >= 0 && value <= 100)
             {
-                while(RECS[i] != ':') i++;
-                i++;
-                wenb = RECS[i] - '0';
+                yan = value;
+                printf("烟雾阈值已更新为：%d\r\n", yan);
             }
-            
-            // CO阈值控制命令
-            if(strncmp((RECS+i),func14,4)==0)
+        }
+        
+        // 处理CO阈值
+        if(strstr((const char*)RECS,"rana") != NULL)
+        {
+            int value;
+            sscanf(strstr((const char*)RECS,"value"), "value\":%d", &value);
+            if(value >= 0 && value <= 100)
             {
-                while(RECS[i] != ':') i++;
-                i++;
-                rana = RECS[i] - '0';
+                ran = value;
+                printf("CO阈值已更新为：%d\r\n", ran);
             }
-            if(strncmp((RECS+i),func15,4)==0)
-            {
-                while(RECS[i] != ':') i++;
-                i++;
-                ranb = RECS[i] - '0';
-            }
-            i++;
+        }
+        
+        memset(RECS,0,sizeof(RECS));
+    }
+
         }
         
         // 状态改变后上报
         Esp_PUB();
+    }
+}*/
+
+
+
+
+void CommandAnalyse(void)
+{
+    if(strncmp(RECS,"+MQTTSUBRECV:",13)==0)
+    {
+        // 1. 获取id并立即回复
+        char id[10] = {0};
+        char *id_p = strstr(RECS, "\"id\":\"");
+        if(id_p)
+        {
+            id_p += 5;
+            int i = 0;
+            while(*id_p != '\"' && i < 9)
+            {
+                id[i++] = *id_p++;
+            }
+        }
+        
+        // 立即回复避免超时
+        printf("AT+MQTTPUB=0,\"$sys/YqRZ5hrM6p/CSDN/thing/property/set_reply\",\"{\\\"id\\\":\\\"%s\\\"\\,\\\"code\\\": 200\\,\\\"msg\\\":\\\"success\\\"}\",0,0\r\n", id);
+
+        // 2. 查找各个功能标识符并获取值
+        char *p;
+        
+        // 风扇控制
+        if((p = strstr(RECS, "feng")) != NULL)
+        {
+            p = strstr(p, ": ") + 2;  // 跳到值
+            feng = *p - '0';
+            if(feng==1)
+							fengkai();
+            else 
+							fengguan();
+        }
+        
+        // 烟雾阈值1
+        if((p = strstr(RECS, "yan1")) != NULL)
+        {
+            p = strstr(p, ": ") + 2;
+            yan1 = *p - '0';
+        }
+        
+      
+        
+        // 温度阈值a
+        if((p = strstr(RECS, "wena")) != NULL)
+        {
+            p = strstr(p, ": ") + 2;
+            wena = *p - '0';
+        }
+        
+      
+        // 水泵控制
+        if((p = strstr(RECS, "shui")) != NULL)
+        {
+            p = strstr(p, ": ") + 2;
+            shui = *p - '0';
+            if(shui==1)
+						
+							shuikai();
+            else 
+							shuiguan();
+        }
+        
+       
+        
+        // 发送控制
+        if((p = strstr(RECS, "fa")) != NULL)
+        {
+            p = strstr(p, ": ") + 2;
+            window = *p - '0';
+        }
+        
+        // 燃气阈值a
+        if((p = strstr(RECS, "rana")) != NULL)
+        {
+            p = strstr(p, ": ") + 2;
+            rana = *p - '0';
+        }
+        
+       
+
+        memset(RECS, 0, sizeof(RECS));
     }
 }
