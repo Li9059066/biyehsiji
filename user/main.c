@@ -39,9 +39,9 @@ uint16_t flag6 = 0;   // 舵机控制标志位
 uint16_t AD = 0;      // AD转换值存储
 float wen1;        // 温度值存储
 uint16_t A = 0;       // 通用计数器
-uint16_t tem = 28;    // 温度阈值（28度）
-uint16_t yan = 70;    // 烟雾阈值（70%）
-uint16_t ran = 60;    // 燃气阈值（60%）
+uint16_t tem = 30;    // 温度阈值，默认30度
+uint16_t yan = 50;    // 烟雾阈值，默认50%
+uint16_t ran = 50;    // CO阈值，默认50%
 uint16_t Judge;       // WiFi连接判断标志
 uint16_t cnt;         // 计数器
 // DHT11温湿度传感器相关变量
@@ -66,6 +66,10 @@ uint8_t display_page = 0;
 #define SZ DHT11_Data.humi_int	
 #define SX DHT11_Data.humi_deci
 
+uint8_t Check_Device_Online(void);
+
+
+
 
 
 void IWDG_Init(void)
@@ -88,92 +92,32 @@ void IWDG_Init(void)
   // 远程控制处理函数
 static void Handle_Remote_Control(void)
 {
-    // 使用静态变量记录上一次的状态 - 删除prev_bao
-    static uint8_t prev_feng = 0;
-    static uint8_t prev_shui = 0;
-    static uint8_t prev_window = 0;
-    uint8_t state_changed = 0;
-
-    // 风扇控制
-    if(feng != prev_feng) {
-        if(feng == 1) {
-            fengkai();
-            auto_fan_state = 0;  // 取消自动控制状态
-        } else {
-            fengguan();
-        }
-        prev_feng = feng;
-        state_changed = 1;
+	                  if(feng == 1) 
+							  {
+                    fengkai();  // 使用已有的风扇开启函数
+                    auto_fan_state = 0;  // 关闭自动控制
+                } else if(feng==0) {
+                    fengguan();  // 使用已有的风扇关闭函数
+                }
+								 if(shui == 1) {
+                    shuikai();  // 使用已有的水泵开启函数
+                    auto_pump_state = 0;  // 关闭自动控制
+                } else  if (shui==0) {
+                    shuiguan();  // 使用已有的水泵关闭函数
+                }
+               if(window == 1) {
+                    Servo_SetAngle(180);  // 使用已有的舵机控制函数
+                } else if(window==0) {
+                    Servo_SetAngle(0);
+                }
+								
     }
 
-    // 水泵控制
-    if(shui != prev_shui) {
-        if(shui == 1) {
-            shuikai();
-            auto_pump_state = 0;  // 取消自动控制状态
-        } else {
-            shuiguan();
-        }
-        prev_shui = shui;
-        state_changed = 1;
-    }
-
-    // 窗户控制
-    if(window != prev_window) {
-        if(window == 1) {
-            Servo_SetAngle(180);
-        } else {
-            Servo_SetAngle(0);
-        }
-        prev_window = window;
-        state_changed = 1;
-    }
-/*// 阈值远程调节
-    if(wena == 1) {
-        if(tem < 40) {
-            tem=tem;
-            state_changed = 1;
-        }
-    }
-    if(wenb == 1) {
-        if(tem > 20) {
-            tem--;
-            state_changed = 1;
-        }
-    }
     
-    if(yan1 == 1) {
-        if(yan < 80) {
-            yan++;
-            state_changed = 1;
-        }
-    }
-    if(yan2 == 1) {
-        if(yan > 20) {
-            yan--;
-            state_changed = 1;
-        }
-    }
+       
+        
     
-    if(rana == 1) {
-        if(ran < 80) {
-            ran++;
-            state_changed = 1;
-        }
-    }
-    if(ranb == 1) {
-        if(ran > 20) {
-            ran--;
-            state_changed = 1;
-        }
-    }
-*/
-    // 如果状态发生改变且WiFi连接正常，立即上报
-    if(state_changed && !Judge) {
-        Esp_PUB();
-        cnt = 0;
-    }
-}
+
 
 /************************************************
  * 显示函数优化（保持原有功能）
@@ -182,47 +126,60 @@ static void Update_Display_Content(void)
 {
     switch(display_page)
     {
-        case 0:
-            OLED_Clear();
+        case 0:  // 合并后的温湿度和气体检测页面
+            OLED_Clear();  // 先清屏，防止残留
+            
+            // 第一行：温度显示（调整位置，确保不超出显示范围）
             OLED_ShowChinese(0, 0, "温度:");
             OLED_ShowNum(40, 0, WZ, 2, OLED_8X16);
             OLED_ShowString(56, 0, ".", OLED_8X16);
             OLED_ShowNum(64, 0, WX, 1, OLED_8X16);
             OLED_ShowString(72, 0, "C", OLED_8X16);
             
+            // 第二行：湿度显示
             OLED_ShowChinese(0, 16, "湿度:");
             OLED_ShowNum(40, 16, SZ, 2, OLED_8X16);
             OLED_ShowString(56, 16, ".", OLED_8X16);
             OLED_ShowNum(64, 16, SX, 1, OLED_8X16);
             OLED_ShowString(72, 16, "%", OLED_8X16);
             
-            OLED_ShowString(95, 0, "P:1/3", OLED_8X16);
-            break;
-
-        case 1:
-            OLED_Clear();
-            OLED_ShowChinese(0, 0, "烟雾:");
-            OLED_ShowNum(40, 0, MQ2_Value, 3, OLED_8X16);
+            // 第三行：烟雾浓度（缩短显示长度）
+            OLED_ShowChinese(0, 32, "烟雾:");
+            OLED_ShowNum(40, 32, MQ2_Value, 3, OLED_8X16);
+            OLED_ShowString(64, 32, "%", OLED_8X16);
             
-            OLED_ShowString(0, 16, "CO:", OLED_8X16);
-            OLED_ShowNum(32, 16, MQ7_Value, 3, OLED_8X16);
+            // 第四行：CO浓度（缩短显示长度）
+            OLED_ShowString(0, 48, "CO:", OLED_8X16);
+            OLED_ShowNum(24, 48, MQ7_Value, 3, OLED_8X16);
+            OLED_ShowString(48, 48, "%", OLED_8X16);
             
-            OLED_ShowString(95, 0, "P:2/3", OLED_8X16);
+            // 页面指示器移到右下角
+            OLED_ShowString(88, 48, "1/2", OLED_8X16);
             break;
-
-        case 2:
+            
+        case 1:  // 系统状态页面
             OLED_Clear();
+            // 第一行：火灾状态
             OLED_ShowChinese(0, 0, "火:");
-            OLED_ShowString(40, 0, fire ? "WARNING" : "NORMAL", OLED_8X16);
+            if(fire) {
+                OLED_ShowString(32, 0, "WARN", OLED_8X16);  // 缩短警告文字
+            } else {
+                OLED_ShowString(32, 0, "SAFE", OLED_8X16);  // 缩短正常文字
+            }
             
-            OLED_ShowString(0, 16, feng==1 ? "Fan:ON" : "Fan:OFF", OLED_8X16);
-            OLED_ShowString(64, 16, shui==1 ? "Pump:ON" : "Pump:OFF", OLED_8X16);
+            // 第二行：风扇状态
+            OLED_ShowString(0, 16, "Fan:", OLED_8X16);
+            OLED_ShowString(32, 16, feng ? "ON " : "OFF", OLED_8X16);
             
-            OLED_ShowString(95, 0, "P:3/3", OLED_8X16);
+            // 第三行：水泵状态
+            OLED_ShowString(0, 32, "Pump:", OLED_8X16);
+            OLED_ShowString(40, 32, shui ? "ON " : "OFF", OLED_8X16);
+            
+            // 页面指示器移到右下角
+            OLED_ShowString(88, 48, "2/2", OLED_8X16);
             break;
     }
 }
-
 static void Update_Sensor_Data(void)
 {
 			// 在循环开始处更新温湿度值
@@ -284,7 +241,7 @@ static void Process_Key_Events(void)
 
             case KEY3_PRES:  // 页面切换
                 if(flag3 != 4)
-                    display_page = (display_page + 1) % 3;
+                    display_page = (display_page + 1) % 2;
                 break;
         }
     }
@@ -376,6 +333,18 @@ int main(void)
     Judge = esp_Init();
     while(1)
     {  
+			
+			// 检查设备在线状态
+        static uint16_t check_timer = 0;
+        if(++check_timer >= 1000)  // 每隔一段时间检查一次
+        {
+            check_timer = 0;
+            if(!Check_Device_Online())
+            {
+                esp_Init();  // 重新初始化ESP8266
+            }
+        }
+			
 			cnt++;
 		  if(cnt==6) //约每6s执行一次数据上报
 		  {
@@ -402,10 +371,15 @@ int main(void)
         Auto_Control_System();
         
            // 处理MQTT消息
-        CommandAnalyse();
+        //CommandAnalyse();
+			//  Auto_Control_System();
+			/* Handle_Remote_Control();*/
+			     
          /* 显示系统 */
         if(flag3 == 4)
          {
+					 OLED_Clear();
+					 
             OLED_Clear();
             OLED_ShowChinese(0, 0, "远程");
             OLED_ShowChinese(0, 16, "温度:");
@@ -417,21 +391,48 @@ int main(void)
             OLED_ShowString(0, 48, "CO:", OLED_8X16);
             OLED_ShowNum(32, 48, ran, 2, OLED_8X16);
             OLED_ShowString(56, 48, "%", OLED_8X16);
-         }
-            else
+					 		
+			
+		if(wena==1)
+		{
+		
+		tem=tem+1;
+		}
+		else if(wena==0)
+		{
+			
+		}
+		
+		
+		
+		
+		if(yan1==1)
+		{
+		yan=yan+1;
+		}
+		else if(yan1==0)
+		{
+			
+		}
+		
+		if(rana==1)
+		{
+		
+		ran=ran+1;
+		}
+		else if(rana==0)
+		{
+			
+		}
+
+	}		
+      
+else
 					{
             Update_Display_Content();
            }
 
-		
-		
-		
-		
-		
-		
-		
-				
-		
+
 		
 		     OLED_Update();
             Delay_ms(100);
